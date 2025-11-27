@@ -9,12 +9,13 @@
 Полная команда:
 
 ```bash
-rm -rf build && cmake -B build && cmake --build build && ./build/lab14_hyperopt
+rm -rf build && cmake -B build && cmake --build build && ./build/lab14_hyperopt && python3 .py/plot_hc_beam_convergence.py && python3 .py/plot_sa_process.py && python3 .py/plot_algorithms_comparison.py
+
 ```
 
 Структура проекта:
 
-```
+    ```
 lab14/
 │── include/
 │     └── hyperparams.h

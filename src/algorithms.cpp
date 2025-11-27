@@ -1,7 +1,17 @@
 #include "hyperparams.h"
-#include <cmath>
 
-// Генерация гиперпараметров и соседей
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <random>
+#include <vector>
+#include <algorithm>
+#include <iostream>
+
+namespace fs = std::filesystem;
+
+// ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ГЕНЕРАЦИИ ================== //
 
 HyperParams random_hyperparams(std::mt19937& rng, const Bounds& b) {
     std::uniform_real_distribution<double> lr_d(b.lr_min, b.lr_max);
@@ -38,18 +48,38 @@ std::vector<HyperParams> generate_neighbors(const HyperParams& h,
     return res;
 }
 
-// --------------------- Hill Climbing ---------------------- //
+// ================== HILL CLIMBING (с логированием в CSV) ================== //
 
 HyperParams hill_climbing(const HyperParams& start,
                           const Bounds& bounds,
                           std::mt19937& rng,
                           int max_iterations,
                           int neighbors_per_step) {
+    // Подготовка CSV: data/csv/hc_history.csv
+    fs::path csvDir = fs::path("data") / "csv";
+    fs::create_directories(csvDir);
+    fs::path hcPath = csvDir / "hc_history.csv";
+    std::ofstream hcOut(hcPath);
+    if (!hcOut) {
+        std::cerr << "[HC] Не удалось открыть " << hcPath << " для записи\n";
+    } else {
+        hcOut << "iter,score,accuracy,f1,latency\n";
+    }
+
     HyperParams current = start;
     Metrics curM = evaluate_model(current);
     double curScore = score_for_HC(curM);
 
-    for (int iter = 0; iter < max_iterations; ++iter) {
+    // Логируем начальное состояние (итерация 0)
+    if (hcOut) {
+        hcOut << 0 << ","
+              << curScore << ","
+              << curM.accuracy << ","
+              << curM.f1 << ","
+              << curM.latency << "\n";
+    }
+
+    for (int iter = 1; iter <= max_iterations; ++iter) {
         HyperParams bestNeighbor = current;
         double bestScore = curScore;
 
@@ -70,12 +100,22 @@ HyperParams hill_climbing(const HyperParams& start,
         }
 
         current  = bestNeighbor;
-        curScore = bestScore;
+        curM     = evaluate_model(current);
+        curScore = score_for_HC(curM);
+
+        if (hcOut) {
+            hcOut << iter << ","
+                  << curScore << ","
+                  << curM.accuracy << ","
+                  << curM.f1 << ","
+                  << curM.latency << "\n";
+        }
     }
+
     return current;
 }
 
-// --------------------- Beam Search ---------------------- //
+// ================== BEAM SEARCH (с логированием в CSV) ================== //
 
 HyperParams beam_search(const HyperParams& start,
                         const Bounds& bounds,
@@ -83,13 +123,34 @@ HyperParams beam_search(const HyperParams& start,
                         int beam_width,
                         int depth,
                         int neighbors_per_state) {
+    // Подготовка CSV: data/csv/beam_history.csv
+    fs::path csvDir = fs::path("data") / "csv";
+    fs::create_directories(csvDir);
+    fs::path beamPath = csvDir / "beam_history.csv";
+    std::ofstream beamOut(beamPath);
+    if (!beamOut) {
+        std::cerr << "[Beam] Не удалось открыть " << beamPath << " для записи\n";
+    } else {
+        beamOut << "iter,score,accuracy,f1,latency\n";
+    }
+
     std::vector<HyperParams> beam;
     beam.push_back(start);
 
     HyperParams globalBest = start;
-    double globalBestScore = score_for_beam(evaluate_model(start));
+    Metrics globalBestM = evaluate_model(start);
+    double globalBestScore = score_for_beam(globalBestM);
 
-    for (int level = 0; level < depth; ++level) {
+    // Лог начального состояния (итерация 0)
+    if (beamOut) {
+        beamOut << 0 << ","
+                << globalBestScore << ","
+                << globalBestM.accuracy << ","
+                << globalBestM.f1 << ","
+                << globalBestM.latency << "\n";
+    }
+
+    for (int level = 1; level <= depth; ++level) {
         std::vector<std::pair<double, HyperParams>> candidates;
 
         for (const auto& state : beam) {
@@ -100,7 +161,9 @@ HyperParams beam_search(const HyperParams& start,
             }
         }
 
-        if (candidates.empty()) break;
+        if (candidates.empty()) {
+            break;
+        }
 
         std::sort(candidates.begin(), candidates.end(),
                   [](const auto& a, const auto& b) {
@@ -113,14 +176,24 @@ HyperParams beam_search(const HyperParams& start,
             if (candidates[i].first > globalBestScore) {
                 globalBestScore = candidates[i].first;
                 globalBest      = candidates[i].second;
+                globalBestM     = evaluate_model(globalBest);
             }
+        }
+
+        // Логируем лучшего на текущем уровне (по глобальному scору)
+        if (beamOut) {
+            beamOut << level << ","
+                    << globalBestScore << ","
+                    << globalBestM.accuracy << ","
+                    << globalBestM.f1 << ","
+                    << globalBestM.latency << "\n";
         }
     }
 
     return globalBest;
 }
 
-// --------------------- Имитация отжига ---------------------- //
+// ================== SIMULATED ANNEALING (с логированием в CSV) =========== //
 
 HyperParams simulated_annealing(const HyperParams& start,
                                 const Bounds& bounds,
@@ -129,6 +202,17 @@ HyperParams simulated_annealing(const HyperParams& start,
                                 double T_start,
                                 double T_end,
                                 double alpha) {
+    // Подготовка CSV: data/csv/sa_history.csv
+    fs::path csvDir = fs::path("data") / "csv";
+    fs::create_directories(csvDir);
+    fs::path saPath = csvDir / "sa_history.csv";
+    std::ofstream saOut(saPath);
+    if (!saOut) {
+        std::cerr << "[SA] Не удалось открыть " << saPath << " для записи\n";
+    } else {
+        saOut << "iter,T,score,accepted_worse\n";
+    }
+
     HyperParams current = start;
     Metrics curM = evaluate_model(current);
     double curScore = score_for_SA(curM);
@@ -138,22 +222,36 @@ HyperParams simulated_annealing(const HyperParams& start,
 
     double T = T_start;
 
-    for (int t = 0; t < max_iterations && T > T_end; ++t) {
+    // Лог начального состояния (итерация 0)
+    if (saOut) {
+        saOut << 0 << ","
+              << T << ","
+              << curScore << ","
+              << 0 << "\n";
+    }
+
+    for (int t = 1; t <= max_iterations && T > T_end; ++t) {
         HyperParams next = local_neighbor(current, rng, bounds, 0.4); // крупнее шаг
         Metrics nextM = evaluate_model(next);
         double nextScore = score_for_SA(nextM);
 
         double dE = curScore - nextScore; // максимизируем score
 
+        bool acceptedWorse = false;
+
         if (dE < 0) {
+            // лучшее решение
             current  = next;
+            curM     = nextM;
             curScore = nextScore;
         } else {
             double prob = std::exp(-dE / T);
             std::uniform_real_distribution<double> u(0.0, 1.0);
             if (u(rng) < prob) {
                 current  = next;
+                curM     = nextM;
                 curScore = nextScore;
+                acceptedWorse = true;
             }
         }
 
@@ -162,7 +260,15 @@ HyperParams simulated_annealing(const HyperParams& start,
             best      = current;
         }
 
-        T *= alpha; // schedule(t)
+        // Лог на текущей итерации
+        if (saOut) {
+            saOut << t << ","
+                  << T << ","
+                  << curScore << ","
+                  << (acceptedWorse ? 1 : 0) << "\n";
+        }
+
+        T *= alpha; // охлаждение
     }
 
     return best;

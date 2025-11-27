@@ -1,5 +1,10 @@
 #include "hyperparams.h"
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <random>
 
 int main() {
     std::ios::sync_with_stdio(false);
@@ -60,6 +65,38 @@ int main() {
     std::cout << "Лучшие параметры (имитация отжига): " << bestSA << "\n";
     std::cout << "Метрики:                            " << mSA
               << "  (значение целевой функции = " << score_for_SA(mSA) << ")\n";
+
+    // ---------- ЛОГИРОВАНИЕ ИТОГОВ В CSV ---------- //
+    namespace fs = std::filesystem;
+    fs::path csvDir = fs::path("data") / "csv";
+    fs::create_directories(csvDir);
+
+    fs::path summaryPath = csvDir / "summary.csv";
+    std::ofstream out(summaryPath);
+    if (!out) {
+        std::cerr << "Не удалось открыть файл " << summaryPath << " для записи\n";
+        return 1;
+    }
+
+    out << "algorithm,lr,depth,reg,accuracy,f1,latency,score\n";
+    out << std::fixed << std::setprecision(6);
+
+    out << "HC,"
+        << bestHC.lr << "," << bestHC.depth << "," << bestHC.reg << ","
+        << mHC.accuracy << "," << mHC.f1 << "," << mHC.latency << ","
+        << score_for_HC(mHC) << "\n";
+
+    out << "Beam,"
+        << bestBeam.lr << "," << bestBeam.depth << "," << bestBeam.reg << ","
+        << mBeam.accuracy << "," << mBeam.f1 << "," << mBeam.latency << ","
+        << score_for_beam(mBeam) << "\n";
+
+    out << "SA,"
+        << bestSA.lr << "," << bestSA.depth << "," << bestSA.reg << ","
+        << mSA.accuracy << "," << mSA.f1 << "," << mSA.latency << ","
+        << score_for_SA(mSA) << "\n";
+
+    std::cout << "\n[INFO] Итоговые результаты сохранены в " << summaryPath << "\n";
 
     return 0;
 }
