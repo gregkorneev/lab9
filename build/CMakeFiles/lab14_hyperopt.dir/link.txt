@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/lab14_hyperopt.dir/src/main.cpp.o CMakeFiles/lab14_hyperopt.dir/src/model.cpp.o CMakeFiles/lab14_hyperopt.dir/src/algorithms.cpp.o -o lab14_hyperopt 
